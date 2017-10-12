@@ -4,6 +4,7 @@ import numpy as np
 import tensorflow as tf
 from six.moves import cPickle as pickle
 
+# Silences some CPU computation warnings that TensorFlow throws my way
 os.environ['TF_CPP_MIN_LOG_LEVEL'] = '2'
 
 pickle_file = 'notMNIST.pickle'
@@ -30,12 +31,14 @@ train_dataset, train_labels = reformat(train_dataset, train_labels)
 valid_dataset, valid_labels = reformat(valid_dataset, valid_labels)
 test_dataset, test_labels = reformat(test_dataset, test_labels)
 
+# Computes accuracy of predictions based on one-hot encoded vectors for labels
 def get_accuracy(preds, labels):
 	return 100.0 * np.mean(np.argmax(preds, 1) == np.argmax(labels, 1))
 
 num_nodes = 1024
 batch_size = 128
 
+# Used to create multiple instances of fully connected layers for the network.
 def fc_layer(input, size_in, size_out, name="fc"):
 	with tf.name_scope(name):
 		w = tf.Variable(tf.truncated_normal([size_in, size_out], stddev=0.1),
@@ -48,7 +51,9 @@ def fc_layer(input, size_in, size_out, name="fc"):
 		dict = {"logits": logits, "weights": w, "biases": b}
 		return dict
 
+# Takes in these hyperparameters in order to test multiple models through TensorBoard
 def mnist_model(num_hidden, hparam_string, learning_rate=0.1, num_steps=10000):
+
 	graph = tf.Graph()
 	with graph.as_default():
 
@@ -75,22 +80,53 @@ def mnist_model(num_hidden, hparam_string, learning_rate=0.1, num_steps=10000):
 		network.append(hidden_layer_1)
 		hl1_act = tf.nn.relu(hidden_layer_1["logits"])
 
+		# TODO: Need to find a more modular way to do this
 		if num_hidden == 2:
 			hidden_layer_2 = fc_layer(hl1_act, num_nodes,  num_nodes, name="hidden_layer_2")
 			network.append(hidden_layer_2)
 			hl2_act = tf.nn.relu(hidden_layer_2["logits"])
 
 			output_layer = fc_layer(hl2_act, num_nodes, num_labels, name="output_layer")
+
+		elif num_hidden == 3:
+
+			hidden_layer_2 = fc_layer(hl1_act, num_nodes,  num_nodes, name="hidden_layer_2")
+			network.append(hidden_layer_2)
+			hl2_act = tf.nn.relu(hidden_layer_2["logits"])
+
+			hidden_layer_3 = fc_layer(hl2_act, num_nodes,  num_nodes, name="hidden_layer_3")
+			network.append(hidden_layer_3)
+			hl3_act = tf.nn.relu(hidden_layer_3["logits"])
+
+			output_layer = fc_layer(hl3_act, num_nodes, num_labels, name="output_layer")
+
+		elif num_hidden == 4:
+			hidden_layer_2 = fc_layer(hl1_act, num_nodes,  num_nodes, name="hidden_layer_2")
+			network.append(hidden_layer_2)
+			hl2_act = tf.nn.relu(hidden_layer_2["logits"])
+
+			hidden_layer_3 = fc_layer(hl2_act, num_nodes,  num_nodes, name="hidden_layer_3")
+			network.append(hidden_layer_3)
+			hl3_act = tf.nn.relu(hidden_layer_3["logits"])
+
+			hidden_layer_4 = fc_layer(hl3_act, num_nodes,  num_nodes, name="hidden_layer_3")
+			network.append(hidden_layer_4)
+			hl4_act = tf.nn.relu(hidden_layer_4["logits"])
+
+			output_layer = fc_layer(hl4_act, num_nodes, num_labels, name="output_layer")
 		else:
 			output_layer = fc_layer(hl1_act, num_nodes, num_labels, name="output_layer")
 
 		output_logits = output_layer["logits"]
 
 		with tf.name_scope("loss"):
+			# Keeping L2 regularization out of this model for other hyperparameter optimizations
 			"""
+			beta = 0.01
 			l2_loss = 0
 			for layer in network:
 				l2_loss += tf.nn.l2_loss(layer["weights"])
+		    l2_loss *= beta
 			"""
 			loss = tf.reduce_mean(
 				tf.nn.softmax_cross_entropy_with_logits(logits=output_logits,
@@ -125,8 +161,8 @@ def mnist_model(num_hidden, hparam_string, learning_rate=0.1, num_steps=10000):
 	with tf.Session(graph=graph) as sess:
 
 		tf.global_variables_initializer().run()
-
-		writer = tf.summary.FileWriter('./logs/varied_hidden_layers/' + hparam_string, graph=sess.graph)
+		writer = tf.summary.FileWriter('./logs/varied_hidden_layers/'
+									   + hparam_string, graph=sess.graph)
 
 		print("Starting run for " + hparam_string + ": ")
 		for step in range(num_steps):
@@ -137,6 +173,7 @@ def mnist_model(num_hidden, hparam_string, learning_rate=0.1, num_steps=10000):
 			feed_dict = {tf_train_dataset: batch_data,
 						 tf_train_labels: batch_labels}
 
+			# Run the optimizer and retrieve useful stats on the training
 			_, l, predictions = sess.run([optimizer, loss, train_prediction],
 							 feed_dict=feed_dict)
 			if step % 500 == 0:
@@ -150,6 +187,8 @@ def mnist_model(num_hidden, hparam_string, learning_rate=0.1, num_steps=10000):
 
 		print("Test accuracy: {:.1f}".format(get_accuracy(test_prediction.eval(), test_labels)))
 
-for num_hidden in [4, 5, 6]:
-	hparam_string = "num_hidden={},num_nodes_constant".format(num_hidden)
-	mnist_model(num_hidden, hparam_string, learning_rate=0.1, num_steps=10000)
+# Creates TensorBoard logs for each set of hyperparameters to compare performance
+for num_hidden in [2, 3, 4]:
+	for lr in [0.01, 0.05, 0.1]:
+		hparam_string = "num_hidden = {}, num_nodes_constant".format(num_hidden)
+		mnist_model(num_hidden, hparam_string, lr, num_steps=10000)
