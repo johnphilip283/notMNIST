@@ -44,6 +44,17 @@ learning_rate = 0.05
 
 graph = tf.Graph()
 
+def conv_layer(input, size_in, size_out, name="conv"):
+	with tf.name_scope(name):
+		w = tf.Variable(tf.truncated_normal([5, 5, size_in, size_out], stddev=0.1), name="W")
+		b = tf.Variable(tf.constant(0.1, shape=[size_out]), name="B")
+		conv = tf.nn.conv2d(input, w, strides=[1, 1, 1, 1], padding="SAME")
+		act = tf.nn.relu(conv + b)
+		tf.summary.histogram("weights", w)
+		tf.summary.histogram("biases", b)
+		tf.summary.histogram("activations", act)
+		return {"logits": act, "weights": w, "biases": b}
+
 with graph.as_default():
 
 	# Input data.
@@ -90,3 +101,22 @@ with graph.as_default():
 	train_prediction = tf.nn.softmax(logits)
 	valid_prediction = tf.nn.softmax(model(tf_valid_dataset))
 	test_prediction = tf.nn.softmax(model(tf_test_dataset))
+
+num_steps = 5001
+
+with tf.Session(graph=graph) as session:
+	tf.global_variables_initializer().run()
+	print('Initialized')
+	for step in range(num_steps):
+		offset = (step * batch_size) % (train_labels.shape[0] - batch_size)
+		batch_data = train_dataset[offset:(offset + batch_size), :, :, :]
+		batch_labels = train_labels[offset:(offset + batch_size), :]
+		feed_dict = {tf_train_dataset : batch_data, tf_train_labels : batch_labels}
+		_, l, predictions = session.run(
+			[optimizer, loss, train_prediction], feed_dict=feed_dict)
+		if (step % 50 == 0):
+			print('Minibatch loss at step %d: %f' % (step, l))
+			print('Minibatch accuracy: %.1f%%' % accuracy(predictions, batch_labels))
+			print('Validation accuracy: %.1f%%' % accuracy(
+				valid_prediction.eval(), valid_labels))
+	print('Test accuracy: %.1f%%' % accuracy(test_prediction.eval(), test_labels))
